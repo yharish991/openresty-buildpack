@@ -9,39 +9,17 @@ set -o pipefail   # do not ignore exit codes when piping output
 build_dir=$1
 cache_dir=$2
 
-# openresty version, installation version can be changed by changing the version number
-OPENRESTY_VERSION=1.9.3.1
-OPENRESTY_PREFIX=$build_dir/openresty
-
 compile_buildpack_dir=$(cd $(dirname $0); cd ..; pwd)
 compile_buildpack_bin=$compile_buildpack_dir/bin
 
 # Load some convenience functions like status(), echo(), and indent()
 source $compile_buildpack_dir/bin/common.sh
 
+mv $compile_buildpack_dir/openresty-1.9.15.1.tar.gz /tmp
+compile_nginx_tgz="/tmp/openresty-1.9.15.1.tar.gz"
 cd $build_dir
 
-# Alternate root location (default is root of project) for html/js/css
-# root: dist/
-if [[ -e "Staticfile" && "$(grep 'root:' Staticfile)X" != "X" ]]; then
-  root_dir=$(grep 'root:' Staticfile | sed -e 's/^root: *//;s/\s*$//')
-  status "Root folder $root_dir"
-else
-  status "Using root folder"
-fi
 root_dir=${root_dir:-.}
-if [[ ! -e ${root_dir} ]] ; then
-  error "the application Staticfile specifies a root directory \`${root_dir}\` that does not exist"
-fi
-if [[ ! -d ${root_dir} ]] ; then
-  error "the application Staticfile specifies a root directory \`${root_dir}\` that is a plain file, but was expected to be a directory"
-fi
-
-if [[ -e "Staticfile" && "$(grep 'host_dot_files: true' Staticfile)X" != "X" ]]; then
-  host_dotfiles=true
-else
-  host_dotfiles=false
-fi
 
 status "Copying project files into scripts/"
 shopt -s extglob
@@ -62,27 +40,16 @@ fi
 shopt -u extglob
 shopt -u dotglob
 
-export PATH="$PATH:/usr/local/sbin:/usr/sbin/:/sbin"
 
-# download and install openresty
-status "==> Downloading OpenResty..." \
- && curl -sSL http://openresty.org/download/ngx_openresty-${OPENRESTY_VERSION}.tar.gz | tar -xvz \
- && echo "==> Configuring OpenResty..." \
- && cd ngx_openresty-* \
- && readonly NPROC=$(grep -c ^processor /proc/cpuinfo 2>/dev/null || 1) \
- && echo "using upto $NPROC threads" \
- && ./configure \
-    --prefix=$OPENRESTY_PREFIX \
-    -j${NPROC} \
- && echo "==> Building OpenResty..." \
- && make -j${NPROC} \
- && echo "==> Installing OpenResty..." \
- && make install \
- && echo "==> Finishing..." \
+status "Setting up nginx"
+tar xzf $compile_nginx_tgz
+cp -f $compile_buildpack_dir/conf/nginx.conf openresty/nginx/conf/nginx.conf
+cp -f $compile_buildpack_dir/conf/mime.types openresty/nginx/conf/mime.types
+cp -f $compile_buildpack_dir/conf/gzip.types openresty/nginx/conf/gzip.types
 
-cd $build_dir
+mkdir -p openresty/nginx/cache/tmp
 
-# remove the downloaded folder
-rm -rf ngx_openresty-*
+[[ -f $build_dir/scripts/nginx.conf ]] && mv $build_dir/scripts/nginx.conf openresty/nginx/conf/nginx.conf
+[[ -f $build_dir/scripts/mime.types ]] && mv $build_dir/scripts/mime.types openresty/nginx/conf/mime.types
 
 cp $compile_buildpack_bin/boot.sh .
